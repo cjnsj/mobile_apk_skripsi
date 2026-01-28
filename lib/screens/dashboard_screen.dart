@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'report_screen.dart'; // Import halaman laporan agar navigasi jalan
 
 class DashboardScreen extends StatefulWidget {
+  const DashboardScreen({super.key});
+
   @override
   _DashboardScreenState createState() => _DashboardScreenState();
 }
@@ -25,15 +28,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _listenToFirebase() {
     _dbRef.onValue.listen((event) {
       if (event.snapshot.value != null) {
-        Map data = event.snapshot.value as Map;
-        setState(() {
-          totalFree = data['total_free'] ?? 0;
-          totalCapacity = data['total_capacity'] ?? 0;
-          l1Free = data['l1_free'] ?? 0;
-          l1Capacity = data['l1_capacity'] ?? 0;
-          l2Free = data['l2_free'] ?? 0;
-          l2Capacity = data['l2_capacity'] ?? 0;
-        });
+        final data = event.snapshot.value as Map<dynamic, dynamic>;
+        if (mounted) {
+          setState(() {
+            totalFree = data['total_free'] ?? 0;
+            totalCapacity = data['total_capacity'] ?? 0;
+            l1Free = data['l1_free'] ?? 0;
+            l1Capacity = data['l1_capacity'] ?? 0;
+            l2Free = data['l2_free'] ?? 0;
+            l2Capacity = data['l2_capacity'] ?? 0;
+          });
+        }
       }
     });
   }
@@ -42,13 +47,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[100],
-
       body: SingleChildScrollView(
         child: Padding(
-          padding: EdgeInsets.fromLTRB(30,60,30,50),
+          padding: const EdgeInsets.fromLTRB(30, 60, 30, 50),
           child: Column(
             children: [
-              // Card Status Parkir Utama
+              // === Card Status Parkir Utama ===
               Container(
                 width: double.infinity,
                 decoration: BoxDecoration(
@@ -62,24 +66,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     BoxShadow(
                       color: Colors.black.withOpacity(0.1),
                       blurRadius: 10,
-                      offset: Offset(0, 5),
+                      offset: const Offset(0, 5),
                     ),
                   ],
                 ),
                 child: Stack(
+                  clipBehavior: Clip.none, // Agar gambar mobil bisa keluar garis
                   children: [
-                    // Ilustrasi Mobil di kanan
+                    // Ilustrasi Mobil di kanan (Pastikan gambar ada di assets)
                     Positioned(
                       right: -70,
                       top: -40,
-                      child: Image.asset(
-                        'assets/images/cars.png', // Tambahkan gambar mobil
-                        height: 380,
-                        fit: BoxFit.contain,
+                      child: Opacity(
+                        opacity: 0.9,
+                        child: Image.asset(
+                          'assets/images/cars.png',
+                          height: 300,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) {
+                            // PERBAIKAN DI SINI: Colors.blue[100]
+                            return Icon(Icons.car_repair, size: 100, color: Colors.blue[100]);
+                          },
+                        ),
                       ),
                     ),
                     Padding(
-                      padding: EdgeInsets.all(20),
+                      padding: const EdgeInsets.all(20),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -99,7 +111,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               color: Colors.blue[900],
                             ),
                           ),
-                          SizedBox(height: 10),
+                          const SizedBox(height: 10),
                           Text(
                             '$totalFree/$totalCapacity',
                             style: TextStyle(
@@ -109,7 +121,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               height: 1.0,
                             ),
                           ),
-                          SizedBox(height: 80), // Space untuk gambar mobil
+                          const SizedBox(height: 80),
                         ],
                       ),
                     ),
@@ -117,9 +129,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
 
-              SizedBox(height: 20),
+              const SizedBox(height: 20),
 
-              // Card Lantai 1 dan Lantai 2
+              // === Card Lantai 1 dan Lantai 2 ===
               Row(
                 children: [
                   // Lantai 1
@@ -136,12 +148,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           BoxShadow(
                             color: Colors.black.withOpacity(0.1),
                             blurRadius: 8,
-                            offset: Offset(0, 4),
+                            offset: const Offset(0, 4),
                           ),
                         ],
                       ),
                       child: Padding(
-                        padding: EdgeInsets.symmetric(vertical: 30, horizontal: 20),
+                        padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20),
                         child: Column(
                           children: [
                             Text(
@@ -152,7 +164,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 color: Colors.blue[900],
                               ),
                             ),
-                            SizedBox(height: 15),
+                            const SizedBox(height: 15),
                             Text(
                               '$l1Free/$l1Capacity',
                               style: TextStyle(
@@ -167,7 +179,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
 
-                  SizedBox(width: 15),
+                  const SizedBox(width: 15),
 
                   // Lantai 2
                   Expanded(
@@ -183,12 +195,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           BoxShadow(
                             color: Colors.black.withOpacity(0.1),
                             blurRadius: 8,
-                            offset: Offset(0, 4),
+                            offset: const Offset(0, 4),
                           ),
                         ],
                       ),
                       child: Padding(
-                        padding: EdgeInsets.symmetric(vertical: 30, horizontal: 20),
+                        padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20),
                         child: Column(
                           children: [
                             Text(
@@ -199,7 +211,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 color: Colors.blue[900],
                               ),
                             ),
-                            SizedBox(height: 15),
+                            const SizedBox(height: 15),
                             Text(
                               '$l2Free/$l2Capacity',
                               style: TextStyle(
@@ -216,15 +228,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ],
               ),
 
-              SizedBox(height: 30),
+              const SizedBox(height: 30),
 
-              // Ilustrasi Parkir
+              // === Ilustrasi Parkir ===
               Image.asset(
                 'assets/images/parking_illustration.png',
                 height: 180,
+                errorBuilder: (context, error, stackTrace) {
+                  return const Icon(Icons.image_not_supported, size: 100, color: Colors.grey);
+                },
               ),
 
-              SizedBox(height: 15),
+              const SizedBox(height: 15),
 
               Text(
                 'Monitoring',
@@ -243,15 +258,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
 
-              SizedBox(height: 30),
+              const SizedBox(height: 30),
 
-              // Tombol Laporan
+              // === Tombol Laporan ===
               SizedBox(
                 width: double.infinity,
                 height: 55,
                 child: ElevatedButton(
                   onPressed: () {
-                    Navigator.pushNamed(context, '/laporan');
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const ReportScreen()),
+                    );
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue[900],
@@ -260,7 +278,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                     elevation: 5,
                   ),
-                  child: Text(
+                  child: const Text(
                     'Lihat Laporan Kunjungan',
                     style: TextStyle(
                       fontSize: 18,
@@ -271,7 +289,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
 
-              SizedBox(height: 20),
+              const SizedBox(height: 20),
             ],
           ),
         ),
