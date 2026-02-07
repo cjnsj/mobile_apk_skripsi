@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:intl/intl.dart'; // Wajib untuk format tanggal
+import 'package:intl/intl.dart';
 import 'report_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -34,45 +34,139 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String periodText = "Memuat...";
   String weekNumberText = "";
 
+  // Variabel Rentang Tanggal Aktif
+  DateTime _startOfWeek = DateTime.now();
+  DateTime _endOfWeek = DateTime.now();
+
+  // Cache data log untuk refresh chart saat ganti tanggal
+  Map<dynamic, dynamic>? _cachedLogData;
+
   @override
   void initState() {
     super.initState();
-    _calculateCurrentWeek(); // Hitung tanggal minggu ini dulu
+    _calculateCurrentWeek();
     _listenToStatus();
     _listenToLogs();
   }
 
-  // --- LOGIKA TANGGAL & MINGGU ---
-  DateTime _startOfWeek = DateTime.now();
-  DateTime _endOfWeek = DateTime.now();
+  // --- LOGIKA TANGGAL ---
 
   void _calculateCurrentWeek() {
     DateTime now = DateTime.now();
-    // Cari hari Senin minggu ini (weekday 1 = Senin)
-    _startOfWeek = now.subtract(Duration(days: now.weekday - 1));
-    _startOfWeek = DateTime(_startOfWeek.year, _startOfWeek.month,
-        _startOfWeek.day, 0, 0, 0); // Jam 00:00
+    _updateWeekRange(now);
+  }
 
-    // Cari hari Minggu (Senin + 6 hari)
-    _endOfWeek = _startOfWeek.add(const Duration(
-        days: 6, hours: 23, minutes: 59, seconds: 59)); // Jam 23:59
+  void _updateWeekRange(DateTime date) {
+    // Cari hari Senin
+    DateTime start = date.subtract(Duration(days: date.weekday - 1));
+    start = DateTime(start.year, start.month, start.day, 0, 0, 0);
 
-    // Format Teks untuk UI
-    // Contoh: "10 Feb - 16 Feb 2024"
-    String startStr = DateFormat('d MMM').format(_startOfWeek);
-    String endStr = DateFormat('d MMM yyyy').format(_endOfWeek);
+    // Cari hari Minggu
+    DateTime end =
+        start.add(const Duration(days: 6, hours: 23, minutes: 59, seconds: 59));
 
-    // Hitung Minggu ke-berapa dalam tahun ini
-    int dayOfYear = int.parse(DateFormat("D").format(now));
-    int weekNum = ((dayOfYear - now.weekday + 10) / 7).floor();
+    String startStr = DateFormat('d MMM').format(start);
+    String endStr = DateFormat('d MMM yyyy').format(end);
+
+    int dayOfYear = int.parse(DateFormat("D").format(start));
+    int weekNum = ((dayOfYear - start.weekday + 10) / 7).floor();
 
     setState(() {
+      _startOfWeek = start;
+      _endOfWeek = end;
       periodText = "$startStr - $endStr";
       weekNumberText = "Minggu ke-$weekNum";
     });
+
+    if (_cachedLogData != null) {
+      _processLogData(_cachedLogData!);
+    }
   }
 
-  // 1. Ambil Status Kapasitas
+  // MODAL BOTTOM SHEET UNTUK MEMILIH MINGGU
+  void _showWeekSelector() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(16),
+          height: 400,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Pilih Periode Minggu",
+                style: GoogleFonts.poppins(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: ListView.separated(
+                  itemCount: 12, // Menampilkan 12 minggu ke belakang
+                  separatorBuilder: (context, index) => const Divider(),
+                  itemBuilder: (context, index) {
+                    DateTime now = DateTime.now();
+                    DateTime anchorStart =
+                        now.subtract(Duration(days: now.weekday - 1));
+                    anchorStart = DateTime(
+                        anchorStart.year, anchorStart.month, anchorStart.day);
+
+                    // Hitung mundur minggu berdasarkan index
+                    DateTime start =
+                        anchorStart.subtract(Duration(days: 7 * index));
+                    DateTime end = start
+                        .add(const Duration(days: 6, hours: 23, minutes: 59));
+
+                    String startStr = DateFormat('d MMM').format(start);
+                    String endStr = DateFormat('d MMM yyyy').format(end);
+
+                    int dayOfYear = int.parse(DateFormat("D").format(start));
+                    int weekNum =
+                        ((dayOfYear - start.weekday + 10) / 7).floor();
+
+                    // Cek seleksi untuk warna
+                    bool isSelected = _startOfWeek.isAtSameMomentAs(start);
+
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        "Minggu ke-$weekNum",
+                        style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.bold,
+                          color:
+                              isSelected ? Colors.blueAccent : Colors.black87,
+                        ),
+                      ),
+                      subtitle: Text(
+                        "$startStr - $endStr",
+                        style: GoogleFonts.poppins(color: Colors.grey[600]),
+                      ),
+                      trailing: isSelected
+                          ? const Icon(Icons.check_circle,
+                              color: Colors.blueAccent)
+                          : null,
+                      onTap: () {
+                        _updateWeekRange(start);
+                        Navigator.pop(context);
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // --- LOGIKA DATABASE ---
+
   void _listenToStatus() {
     _dbRefSystem.onValue.listen((event) {
       if (event.snapshot.value != null) {
@@ -92,50 +186,49 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
-  // 2. Ambil Log & Filter HANYA Minggu Ini
   void _listenToLogs() {
     _dbRefLogs.onValue.listen((event) {
       if (event.snapshot.value != null) {
         final data = event.snapshot.value as Map<dynamic, dynamic>;
+        _cachedLogData = data;
+        _processLogData(data);
+      }
+    });
+  }
 
-        List<double> tempCounts = [0, 0, 0, 0, 0, 0, 0];
-        double maxVal = 0;
+  void _processLogData(Map<dynamic, dynamic> data) {
+    List<double> tempCounts = [0, 0, 0, 0, 0, 0, 0];
+    double maxVal = 0;
 
-        data.forEach((key, value) {
-          final log = value as Map<dynamic, dynamic>;
-          if (log['timestamp'] != null) {
-            int ts = int.tryParse(log['timestamp'].toString()) ?? 0;
-            if (ts > 0) {
-              DateTime logDate = DateTime.fromMillisecondsSinceEpoch(ts);
+    data.forEach((key, value) {
+      final log = value as Map<dynamic, dynamic>;
+      if (log['timestamp'] != null) {
+        int ts = int.tryParse(log['timestamp'].toString()) ?? 0;
+        if (ts > 0) {
+          DateTime logDate = DateTime.fromMillisecondsSinceEpoch(ts);
 
-              // --- FILTER PENTING ---
-              // Hanya hitung jika logDate ada di antara Senin 00:00 s/d Minggu 23:59 minggu ini
-              if (logDate.isAfter(
-                      _startOfWeek.subtract(const Duration(seconds: 1))) &&
-                  logDate
-                      .isBefore(_endOfWeek.add(const Duration(seconds: 1)))) {
-                int dayIndex = logDate.weekday - 1; // Senin(1) jadi index 0
-                if (dayIndex >= 0 && dayIndex < 7) {
-                  tempCounts[dayIndex]++;
-                }
-              }
+          if (logDate
+                  .isAfter(_startOfWeek.subtract(const Duration(seconds: 1))) &&
+              logDate.isBefore(_endOfWeek.add(const Duration(seconds: 1)))) {
+            int dayIndex = logDate.weekday - 1;
+            if (dayIndex >= 0 && dayIndex < 7) {
+              tempCounts[dayIndex]++;
             }
           }
-        });
-
-        // Cari nilai max untuk skala chart
-        for (var val in tempCounts) {
-          if (val > maxVal) maxVal = val;
-        }
-
-        if (mounted) {
-          setState(() {
-            weeklyCounts = tempCounts;
-            maxChartY = maxVal == 0 ? 10 : maxVal + 5;
-          });
         }
       }
     });
+
+    for (var val in tempCounts) {
+      if (val > maxVal) maxVal = val;
+    }
+
+    if (mounted) {
+      setState(() {
+        weeklyCounts = tempCounts;
+        maxChartY = maxVal == 0 ? 10 : maxVal + 5;
+      });
+    }
   }
 
   @override
@@ -283,7 +376,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
             const SizedBox(height: 24),
 
-            // === BAGIAN CHART DENGAN INFO TANGGAL ===
+            // === STATISTIK HEADER ===
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -292,35 +385,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                         color: Colors.black87)),
-                // Badge Minggu Ke-X
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.blue.shade100),
-                  ),
-                  child: Text(
-                    weekNumberText, // Contoh: "Minggu ke-7"
-                    style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.blueAccent),
+
+                // TOMBOL MINGGU KE-X (MEMANGGIL _showWeekSelector)
+                InkWell(
+                  onTap: _showWeekSelector,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.shade100),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          weekNumberText,
+                          style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.blueAccent),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.keyboard_arrow_down_rounded,
+                            color: Colors.blueAccent, size: 16),
+                      ],
+                    ),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 4),
-            // Teks Tanggal Periode
             Text(
-              periodText, // Contoh: "10 Feb - 16 Feb 2025"
+              periodText,
               style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[600]),
             ),
 
             const SizedBox(height: 12),
 
-            // Container Chart
+            // === CHART CONTAINER ===
             Container(
               height: 250,
               padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
@@ -401,17 +505,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   gridData: const FlGridData(show: false),
                   borderData: FlBorderData(show: false),
-                  barGroups: [
-                    _makeBarGroup(0, weeklyCounts[0], Colors.blue.shade300),
-                    _makeBarGroup(1, weeklyCounts[1], Colors.blue.shade300),
-                    _makeBarGroup(2, weeklyCounts[2], Colors.blue.shade300),
-                    _makeBarGroup(3, weeklyCounts[3], Colors.blue.shade300),
-                    _makeBarGroup(4, weeklyCounts[4], Colors.blue.shade300),
-                    _makeBarGroup(5, weeklyCounts[5], Colors.redAccent),
-                    _makeBarGroup(6, weeklyCounts[6], Colors.redAccent),
-                  ],
+                  barGroups: List.generate(
+                      7, (index) => _makeBarGroup(index, weeklyCounts[index])),
                 ),
               ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // === LEGEND ===
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildLegendItem(Colors.green, "Sepi"),
+                const SizedBox(width: 16),
+                _buildLegendItem(Colors.orange, "Sedang"),
+                const SizedBox(width: 16),
+                _buildLegendItem(Colors.redAccent, "Padat"),
+              ],
             ),
 
             const SizedBox(height: 24),
@@ -432,7 +543,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         capacity: l1Capacity,
                         progress: progressL1,
                         color: Colors.blueAccent,
-                        icon: Icons.directions_car_filled)),
+                        icon: Icons.looks_one)),
                 const SizedBox(width: 16),
                 Expanded(
                     child: _buildFloorCard(
@@ -441,18 +552,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         capacity: l2Capacity,
                         progress: progressL2,
                         color: Colors.purpleAccent,
-                        icon: Icons.local_taxi)),
+                        icon: Icons.looks_two)),
               ],
             ),
 
             const SizedBox(height: 30),
 
-            // === MENU REPORT ===
+            // === MENU REPORT (DENGAN PASSING PARAMETER) ===
             InkWell(
-              onTap: () => Navigator.push(
+              onTap: () {
+                // Pass rentang tanggal yang dipilih ke ReportScreen
+                Navigator.push(
                   context,
                   MaterialPageRoute(
-                      builder: (context) => const ReportScreen())),
+                    builder: (context) => ReportScreen(
+                      initialDateRange:
+                          DateTimeRange(start: _startOfWeek, end: _endOfWeek),
+                    ),
+                  ),
+                );
+              },
               borderRadius: BorderRadius.circular(16),
               child: Container(
                 padding: const EdgeInsets.all(16),
@@ -503,9 +622,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // --- HELPER WIDGETS ---
+  Widget _buildLegendItem(Color color, String label) {
+    return Row(
+      children: [
+        Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 6),
+        Text(label,
+            style: GoogleFonts.poppins(
+                fontSize: 12,
+                color: Colors.grey[700],
+                fontWeight: FontWeight.w500)),
+      ],
+    );
+  }
 
-  BarChartGroupData _makeBarGroup(int x, double y, Color color) {
-    Color barColor = y > 5 ? Colors.orange : color;
+  BarChartGroupData _makeBarGroup(int x, double y) {
+    Color barColor;
+    if (y <= 5) {
+      barColor = Colors.green;
+    } else if (y <= 10) {
+      barColor = Colors.orange;
+    } else {
+      barColor = Colors.redAccent;
+    }
+
     return BarChartGroupData(
       x: x,
       barRods: [
@@ -516,10 +659,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           borderRadius: const BorderRadius.only(
               topLeft: Radius.circular(6), topRight: Radius.circular(6)),
           backDrawRodData: BackgroundBarChartRodData(
-            show: true,
-            toY: maxChartY,
-            color: Colors.grey.shade100,
-          ),
+              show: true, toY: maxChartY, color: Colors.grey.shade100),
         ),
       ],
     );
@@ -535,15 +675,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.grey.withOpacity(0.05),
-              blurRadius: 15,
-              offset: const Offset(0, 5))
-        ],
-      ),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.grey.withOpacity(0.05),
+                blurRadius: 15,
+                offset: const Offset(0, 5))
+          ]),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
